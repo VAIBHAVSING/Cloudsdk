@@ -4,22 +4,22 @@ import "context"
 
 // VMConfig represents the configuration for creating a virtual machine
 type VMConfig struct {
-	Name       string
-	ImageID    string
-	InstanceType string
-	KeyName    string
+	Name           string
+	ImageID        string
+	InstanceType   string
+	KeyName        string
 	SecurityGroups []string
-	UserData   string
+	UserData       string
 }
 
 // VM represents a virtual machine
 type VM struct {
-	ID          string
-	Name        string
-	State       string
-	PublicIP    string
-	PrivateIP   string
-	LaunchTime  string
+	ID         string
+	Name       string
+	State      string
+	PublicIP   string
+	PrivateIP  string
+	LaunchTime string
 }
 
 // Compute defines the interface for compute operations
