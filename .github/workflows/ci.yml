@@ -26,7 +26,7 @@ jobs:
           path: |
             ~/go/pkg/mod
             ~/.cache/go-build
-          key: ${{ runner.os }}-go-${{ hashFiles('**/go.sum') }}
+          key: ${{ runner.os }}-go-${{ hashFiles('go/go.sum') }}
 
       - name: Download and verify dependencies
         working-directory: ./go
