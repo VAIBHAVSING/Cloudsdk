@@ -38,13 +38,23 @@ jobs:
         run: |
           curl -sSfL https://raw.githubusercontent.com/golangci/golangci-lint/master/install.sh | sh -s -- -b $(go env GOPATH)/bin v1.55.2
 
-      - name: Lint, build and test
+      - name: Lint
         working-directory: ./go
         run: |
           go vet ./...
           golangci-lint run --timeout=2m
-          go build ./...
-          go test -race -cover ./...
+
+      - name: Build
+        working-directory: ./go
+        run: go build ./...
+
+      - name: Test
+        working-directory: ./go
+        run: go test -race -cover ./...
+
+      - name: Coverage Report
+        working-directory: ./go
+        run: go test -race -coverprofile=coverage.out -covermode=atomic ./...
 
       - name: Check module tidiness
         working-directory: ./go
