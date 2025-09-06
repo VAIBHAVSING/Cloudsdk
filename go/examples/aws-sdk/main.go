@@ -5,7 +5,7 @@ import (
 	"fmt"
 	"log"
 
-	"github.com/VAIBHAVSING/Cloudsdk/go"
+	cloudsdk "github.com/VAIBHAVSING/Cloudsdk/go"
 	"github.com/VAIBHAVSING/Cloudsdk/go/providers/aws"
 	"github.com/VAIBHAVSING/Cloudsdk/go/services"
 )
