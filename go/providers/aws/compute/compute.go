@@ -1,0 +1,120 @@
+package compute
+
+import (
+	"context"
+	"fmt"
+
+	"github.com/VAIBHAVSING/Cloudsdk/go/services"
+	"github.com/aws/aws-sdk-go-v2/aws"
+	"github.com/aws/aws-sdk-go-v2/service/ec2"
+	"github.com/aws/aws-sdk-go-v2/service/ec2/types"
+)
+
+// EC2ClientInterface defines methods we need from EC2 client for testing
+type EC2ClientInterface interface {
+	RunInstances(ctx context.Context, input *ec2.RunInstancesInput, opts ...func(*ec2.Options)) (*ec2.RunInstancesOutput, error)
+	DescribeInstances(ctx context.Context, input *ec2.DescribeInstancesInput, opts ...func(*ec2.Options)) (*ec2.DescribeInstancesOutput, error)
+}
+
+// AWSCompute implements the Compute interface for AWS
+type AWSCompute struct {
+	client EC2ClientInterface
+}
+
+// New creates a new AWSCompute instance with real AWS client
+func New(cfg aws.Config) services.Compute {
+	client := ec2.NewFromConfig(cfg)
+	return &AWSCompute{client: client}
+}
+
+// NewWithClient creates a new AWSCompute instance with custom client (for testing)
+func NewWithClient(client EC2ClientInterface) services.Compute {
+	return &AWSCompute{client: client}
+}
+
+// CreateVM creates a new virtual machine
+func (c *AWSCompute) CreateVM(ctx context.Context, config *services.VMConfig) (*services.VM, error) {
+	input := &ec2.RunInstancesInput{
+		ImageId:      aws.String(config.ImageID),
+		InstanceType: types.InstanceType(config.InstanceType),
+		MinCount:     aws.Int32(1),
+		MaxCount:     aws.Int32(1),
+		KeyName:      aws.String(config.KeyName),
+		UserData:     aws.String(config.UserData),
+	}
+
+	if len(config.SecurityGroups) > 0 {
+		input.SecurityGroupIds = make([]string, len(config.SecurityGroups))
+		copy(input.SecurityGroupIds, config.SecurityGroups)
+	}
+
+	resp, err := c.client.RunInstances(ctx, input)
+	if err != nil {
+		return nil, fmt.Errorf("failed to create EC2 instance: %w", err)
+	}
+
+	if len(resp.Instances) == 0 {
+		return nil, fmt.Errorf("no instances created")
+	}
+
+	inst := resp.Instances[0]
+	return &services.VM{
+		ID:         aws.ToString(inst.InstanceId),
+		Name:       config.Name, // AWS doesn't set name here, but we can tag later
+		State:      string(inst.State.Name),
+		PublicIP:   aws.ToString(inst.PublicIpAddress),
+		PrivateIP:  aws.ToString(inst.PrivateIpAddress),
+		LaunchTime: inst.LaunchTime.String(),
+	}, nil
+}
+
+// ListVMs lists all virtual machines
+func (c *AWSCompute) ListVMs(ctx context.Context) ([]*services.VM, error) {
+	resp, err := c.client.DescribeInstances(ctx, &ec2.DescribeInstancesInput{})
+	if err != nil {
+		return nil, fmt.Errorf("failed to describe instances: %w", err)
+	}
+
+	var vms []*services.VM
+	for _, res := range resp.Reservations {
+		for _, inst := range res.Instances {
+			vm := &services.VM{
+				ID:         aws.ToString(inst.InstanceId),
+				State:      string(inst.State.Name),
+				PublicIP:   aws.ToString(inst.PublicIpAddress),
+				PrivateIP:  aws.ToString(inst.PrivateIpAddress),
+				LaunchTime: inst.LaunchTime.String(),
+			}
+			// Get name from tags
+			for _, tag := range inst.Tags {
+				if aws.ToString(tag.Key) == "Name" {
+					vm.Name = aws.ToString(tag.Value)
+					break
+				}
+			}
+			vms = append(vms, vm)
+		}
+	}
+	return vms, nil
+}
+
+// Other methods: GetVM, StartVM, StopVM, DeleteVM - implement similarly
+func (c *AWSCompute) GetVM(ctx context.Context, id string) (*services.VM, error) {
+	// TODO: implement
+	return nil, fmt.Errorf("not implemented")
+}
+
+func (c *AWSCompute) StartVM(ctx context.Context, id string) error {
+	// TODO: implement
+	return fmt.Errorf("not implemented")
+}
+
+func (c *AWSCompute) StopVM(ctx context.Context, id string) error {
+	// TODO: implement
+	return fmt.Errorf("not implemented")
+}
+
+func (c *AWSCompute) DeleteVM(ctx context.Context, id string) error {
+	// TODO: implement
+	return fmt.Errorf("not implemented")
+}
