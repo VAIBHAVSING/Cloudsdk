@@ -13,8 +13,8 @@ import (
 
 // mockRDSClient is a mock implementation of the RDS client
 type mockRDSClient struct {
-	createDBInstanceResponse *rds.CreateDBInstanceOutput
-	createDBInstanceError    error
+	createDBInstanceResponse    *rds.CreateDBInstanceOutput
+	createDBInstanceError       error
 	describeDBInstancesResponse *rds.DescribeDBInstancesOutput
 	describeDBInstancesError    error
 }
