@@ -14,22 +14,42 @@ import (
 type EC2ClientInterface interface {
 	RunInstances(ctx context.Context, input *ec2.RunInstancesInput, opts ...func(*ec2.Options)) (*ec2.RunInstancesOutput, error)
 	DescribeInstances(ctx context.Context, input *ec2.DescribeInstancesInput, opts ...func(*ec2.Options)) (*ec2.DescribeInstancesOutput, error)
+	DescribeInstanceTypes(ctx context.Context, input *ec2.DescribeInstanceTypesInput, opts ...func(*ec2.Options)) (*ec2.DescribeInstanceTypesOutput, error)
+	DescribePlacementGroups(ctx context.Context, input *ec2.DescribePlacementGroupsInput, opts ...func(*ec2.Options)) (*ec2.DescribePlacementGroupsOutput, error)
+	CreatePlacementGroup(ctx context.Context, input *ec2.CreatePlacementGroupInput, opts ...func(*ec2.Options)) (*ec2.CreatePlacementGroupOutput, error)
+	DeletePlacementGroup(ctx context.Context, input *ec2.DeletePlacementGroupInput, opts ...func(*ec2.Options)) (*ec2.DeletePlacementGroupOutput, error)
+	RequestSpotInstances(ctx context.Context, input *ec2.RequestSpotInstancesInput, opts ...func(*ec2.Options)) (*ec2.RequestSpotInstancesOutput, error)
+	DescribeSpotInstanceRequests(ctx context.Context, input *ec2.DescribeSpotInstanceRequestsInput, opts ...func(*ec2.Options)) (*ec2.DescribeSpotInstanceRequestsOutput, error)
+	CancelSpotInstanceRequests(ctx context.Context, input *ec2.CancelSpotInstanceRequestsInput, opts ...func(*ec2.Options)) (*ec2.CancelSpotInstanceRequestsOutput, error)
 }
 
 // AWSCompute implements the Compute interface for AWS
 type AWSCompute struct {
 	client EC2ClientInterface
+	instanceTypesSvc    *InstanceTypesServiceImpl
+	placementGroupsSvc  *PlacementGroupsServiceImpl
+	spotInstancesSvc    *SpotInstancesServiceImpl
 }
 
 // New creates a new AWSCompute instance with real AWS client
 func New(cfg aws.Config) services.Compute {
 	client := ec2.NewFromConfig(cfg)
-	return &AWSCompute{client: client}
+	return &AWSCompute{
+		client: client,
+		instanceTypesSvc:    &InstanceTypesServiceImpl{client: client},
+		placementGroupsSvc:  &PlacementGroupsServiceImpl{client: client},
+		spotInstancesSvc:    &SpotInstancesServiceImpl{client: client},
+	}
 }
 
 // NewWithClient creates a new AWSCompute instance with custom client (for testing)
 func NewWithClient(client EC2ClientInterface) services.Compute {
-	return &AWSCompute{client: client}
+	return &AWSCompute{
+		client: client,
+		instanceTypesSvc:    &InstanceTypesServiceImpl{client: client},
+		placementGroupsSvc:  &PlacementGroupsServiceImpl{client: client},
+		spotInstancesSvc:    &SpotInstancesServiceImpl{client: client},
+	}
 }
 
 // CreateVM creates a new virtual machine
@@ -117,4 +137,260 @@ func (c *AWSCompute) StopVM(ctx context.Context, id string) error {
 func (c *AWSCompute) DeleteVM(ctx context.Context, id string) error {
 	// TODO: implement
 	return fmt.Errorf("not implemented")
+}
+
+// InstanceTypes returns the instance types service
+func (c *AWSCompute) InstanceTypes() services.InstanceTypesService {
+	return c.instanceTypesSvc
+}
+
+// PlacementGroups returns the placement groups service
+func (c *AWSCompute) PlacementGroups() services.PlacementGroupsService {
+	return c.placementGroupsSvc
+}
+
+// SpotInstances returns the spot instances service
+func (c *AWSCompute) SpotInstances() services.SpotInstancesService {
+	return c.spotInstancesSvc
+}
+
+// InstanceTypesServiceImpl implements InstanceTypesService
+type InstanceTypesServiceImpl struct {
+	client EC2ClientInterface
+}
+
+// List returns a list of instance types based on filters
+func (s *InstanceTypesServiceImpl) List(ctx context.Context, filter *services.InstanceTypeFilter) ([]*services.InstanceType, error) {
+	input := &ec2.DescribeInstanceTypesInput{}
+
+	if filter != nil {
+		if len(filter.InstanceTypes) > 0 {
+			input.InstanceTypes = make([]types.InstanceType, len(filter.InstanceTypes))
+			for i, it := range filter.InstanceTypes {
+				input.InstanceTypes[i] = types.InstanceType(it)
+			}
+		}
+		// Note: AWS SDK doesn't support direct filtering by vCPU, memory, etc.
+		// We'll need to filter the results after fetching
+	}
+
+	resp, err := s.client.DescribeInstanceTypes(ctx, input)
+	if err != nil {
+		return nil, fmt.Errorf("failed to describe instance types: %w", err)
+	}
+
+	var instanceTypes []*services.InstanceType
+	for _, it := range resp.InstanceTypes {
+		instanceType := &services.InstanceType{
+			InstanceType:       string(it.InstanceType),
+			VCpus:              aws.ToInt32(it.VCpuInfo.DefaultVCpus),
+			MemoryGB:           float64(aws.ToInt64(it.MemoryInfo.SizeInMiB)) / 1024,
+			NetworkPerformance: aws.ToString(it.NetworkInfo.NetworkPerformance),
+			CurrentGeneration:  aws.ToBool(it.CurrentGeneration),
+		}
+
+		// Calculate storage
+		if it.InstanceStorageInfo != nil && len(it.InstanceStorageInfo.Disks) > 0 {
+			for _, disk := range it.InstanceStorageInfo.Disks {
+				if disk.SizeInGB != nil {
+					instanceType.StorageGB += int32(aws.ToInt64(disk.SizeInGB))
+				}
+			}
+		}
+
+		// Apply filters
+		if filter != nil {
+			if filter.VCpus != nil && instanceType.VCpus != *filter.VCpus {
+				continue
+			}
+			if filter.MemoryGB != nil && instanceType.MemoryGB < *filter.MemoryGB {
+				continue
+			}
+			if filter.StorageGB != nil && instanceType.StorageGB < *filter.StorageGB {
+				continue
+			}
+			if filter.NetworkPerf != nil && instanceType.NetworkPerformance != *filter.NetworkPerf {
+				continue
+			}
+		}
+
+		instanceTypes = append(instanceTypes, instanceType)
+	}
+
+	return instanceTypes, nil
+}
+
+// PlacementGroupsServiceImpl implements PlacementGroupsService
+type PlacementGroupsServiceImpl struct {
+	client EC2ClientInterface
+}
+
+// Create creates a new placement group
+func (s *PlacementGroupsServiceImpl) Create(ctx context.Context, config *services.PlacementGroupConfig) (*services.PlacementGroup, error) {
+	input := &ec2.CreatePlacementGroupInput{
+		GroupName:         aws.String(config.GroupName),
+		Strategy:          types.PlacementStrategy(config.Strategy),
+	}
+
+	_, err := s.client.CreatePlacementGroup(ctx, input)
+	if err != nil {
+		return nil, fmt.Errorf("failed to create placement group: %w", err)
+	}
+
+	// Describe to get the created placement group details
+	describeInput := &ec2.DescribePlacementGroupsInput{
+		GroupNames: []string{config.GroupName},
+	}
+
+	resp, err := s.client.DescribePlacementGroups(ctx, describeInput)
+	if err != nil {
+		return nil, fmt.Errorf("failed to describe placement group: %w", err)
+	}
+
+	if len(resp.PlacementGroups) == 0 {
+		return nil, fmt.Errorf("placement group not found after creation")
+	}
+
+	pg := resp.PlacementGroups[0]
+	return &services.PlacementGroup{
+		GroupName: aws.ToString(pg.GroupName),
+		GroupId:   aws.ToString(pg.GroupId),
+		Strategy:  string(pg.Strategy),
+		State:     string(pg.State),
+		GroupArn:  aws.ToString(pg.GroupArn),
+	}, nil
+}
+
+// Delete deletes a placement group
+func (s *PlacementGroupsServiceImpl) Delete(ctx context.Context, groupName string) error {
+	input := &ec2.DeletePlacementGroupInput{
+		GroupName: aws.String(groupName),
+	}
+
+	_, err := s.client.DeletePlacementGroup(ctx, input)
+	if err != nil {
+		return fmt.Errorf("failed to delete placement group: %w", err)
+	}
+
+	return nil
+}
+
+// List returns a list of placement groups
+func (s *PlacementGroupsServiceImpl) List(ctx context.Context) ([]*services.PlacementGroup, error) {
+	input := &ec2.DescribePlacementGroupsInput{}
+
+	resp, err := s.client.DescribePlacementGroups(ctx, input)
+	if err != nil {
+		return nil, fmt.Errorf("failed to describe placement groups: %w", err)
+	}
+
+	var placementGroups []*services.PlacementGroup
+	for _, pg := range resp.PlacementGroups {
+		placementGroups = append(placementGroups, &services.PlacementGroup{
+			GroupName: aws.ToString(pg.GroupName),
+			GroupId:   aws.ToString(pg.GroupId),
+			Strategy:  string(pg.Strategy),
+			State:     string(pg.State),
+			GroupArn:  aws.ToString(pg.GroupArn),
+		})
+	}
+
+	return placementGroups, nil
+}
+
+// SpotInstancesServiceImpl implements SpotInstancesService
+type SpotInstancesServiceImpl struct {
+	client EC2ClientInterface
+}
+
+// Request requests spot instances
+func (s *SpotInstancesServiceImpl) Request(ctx context.Context, config *services.SpotInstanceConfig) (*services.SpotInstanceRequest, error) {
+	input := &ec2.RequestSpotInstancesInput{
+		LaunchSpecification: &types.RequestSpotLaunchSpecification{
+			ImageId:      aws.String(config.ImageID),
+			InstanceType: types.InstanceType(config.InstanceType),
+		},
+	}
+
+	if config.SpotPrice != nil {
+		input.SpotPrice = config.SpotPrice
+	}
+
+	if config.AvailabilityZone != nil {
+		input.AvailabilityZoneGroup = config.AvailabilityZone
+	}
+
+	if config.LaunchSpecification != nil {
+		spec := config.LaunchSpecification
+		input.LaunchSpecification.KeyName = aws.String(spec.KeyName)
+		if len(spec.SecurityGroups) > 0 {
+			input.LaunchSpecification.SecurityGroupIds = spec.SecurityGroups
+		}
+		input.LaunchSpecification.UserData = aws.String(spec.UserData)
+	}
+
+	resp, err := s.client.RequestSpotInstances(ctx, input)
+	if err != nil {
+		return nil, fmt.Errorf("failed to request spot instances: %w", err)
+	}
+
+	if len(resp.SpotInstanceRequests) == 0 {
+		return nil, fmt.Errorf("no spot instance requests created")
+	}
+
+	req := resp.SpotInstanceRequests[0]
+	return &services.SpotInstanceRequest{
+		SpotInstanceRequestId: aws.ToString(req.SpotInstanceRequestId),
+		State:                 string(req.State),
+		Status:                aws.ToString(req.Status.Code),
+		SpotPrice:             aws.ToString(req.SpotPrice),
+		CreateTime:            aws.ToTime(req.CreateTime).String(),
+	}, nil
+}
+
+// Describe describes spot instance requests
+func (s *SpotInstancesServiceImpl) Describe(ctx context.Context, requestIds []string) ([]*services.SpotInstanceRequest, error) {
+	input := &ec2.DescribeSpotInstanceRequestsInput{}
+
+	if len(requestIds) > 0 {
+		input.SpotInstanceRequestIds = requestIds
+	}
+
+	resp, err := s.client.DescribeSpotInstanceRequests(ctx, input)
+	if err != nil {
+		return nil, fmt.Errorf("failed to describe spot instance requests: %w", err)
+	}
+
+	var requests []*services.SpotInstanceRequest
+	for _, req := range resp.SpotInstanceRequests {
+		request := &services.SpotInstanceRequest{
+			SpotInstanceRequestId: aws.ToString(req.SpotInstanceRequestId),
+			State:                 string(req.State),
+			Status:                aws.ToString(req.Status.Code),
+			SpotPrice:             aws.ToString(req.SpotPrice),
+			CreateTime:            aws.ToTime(req.CreateTime).String(),
+		}
+
+		if req.InstanceId != nil {
+			request.InstanceId = aws.ToString(req.InstanceId)
+		}
+
+		requests = append(requests, request)
+	}
+
+	return requests, nil
+}
+
+// Cancel cancels spot instance requests
+func (s *SpotInstancesServiceImpl) Cancel(ctx context.Context, requestId string) error {
+	input := &ec2.CancelSpotInstanceRequestsInput{
+		SpotInstanceRequestIds: []string{requestId},
+	}
+
+	_, err := s.client.CancelSpotInstanceRequests(ctx, input)
+	if err != nil {
+		return fmt.Errorf("failed to cancel spot instance request: %w", err)
+	}
+
+	return nil
 }
