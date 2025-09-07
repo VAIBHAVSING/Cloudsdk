@@ -13,14 +13,14 @@ import (
 
 // mockEC2Client is a mock implementation of the EC2 client
 type mockEC2Client struct {
-	runInstancesResponse      *ec2.RunInstancesOutput
-	runInstancesError         error
-	describeInstancesResponse *ec2.DescribeInstancesOutput
-	describeInstancesError    error
-	startInstancesResponse *ec2.StartInstancesOutput
-	startInstancesError    error
-	stopInstancesResponse *ec2.StopInstancesOutput
-	stopInstancesError    error
+	runInstancesResponse       *ec2.RunInstancesOutput
+	runInstancesError          error
+	describeInstancesResponse  *ec2.DescribeInstancesOutput
+	describeInstancesError     error
+	startInstancesResponse     *ec2.StartInstancesOutput
+	startInstancesError        error
+	stopInstancesResponse      *ec2.StopInstancesOutput
+	stopInstancesError         error
 	terminateInstancesResponse *ec2.TerminateInstancesOutput
 	terminateInstancesError    error
 }
