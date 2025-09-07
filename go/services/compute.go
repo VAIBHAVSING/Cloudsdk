@@ -54,11 +54,11 @@ type PlacementGroupConfig struct {
 
 // PlacementGroup represents an EC2 placement group
 type PlacementGroup struct {
-	GroupName    string
-	GroupId      string
-	Strategy     string
-	State        string
-	GroupArn     string
+	GroupName string
+	GroupId   string
+	Strategy  string
+	State     string
+	GroupArn  string
 }
 
 // PlacementGroupsService defines operations for EC2 placement groups

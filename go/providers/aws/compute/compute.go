@@ -28,30 +28,30 @@ type EC2ClientInterface interface {
 
 // AWSCompute implements the Compute interface for AWS
 type AWSCompute struct {
-	client EC2ClientInterface
-	instanceTypesSvc    *InstanceTypesServiceImpl
-	placementGroupsSvc  *PlacementGroupsServiceImpl
-	spotInstancesSvc    *SpotInstancesServiceImpl
+	client             EC2ClientInterface
+	instanceTypesSvc   *InstanceTypesServiceImpl
+	placementGroupsSvc *PlacementGroupsServiceImpl
+	spotInstancesSvc   *SpotInstancesServiceImpl
 }
 
 // New creates a new AWSCompute instance with real AWS client
 func New(cfg aws.Config) services.Compute {
 	client := ec2.NewFromConfig(cfg)
 	return &AWSCompute{
-		client: client,
-		instanceTypesSvc:    &InstanceTypesServiceImpl{client: client},
-		placementGroupsSvc:  &PlacementGroupsServiceImpl{client: client},
-		spotInstancesSvc:    &SpotInstancesServiceImpl{client: client},
+		client:             client,
+		instanceTypesSvc:   &InstanceTypesServiceImpl{client: client},
+		placementGroupsSvc: &PlacementGroupsServiceImpl{client: client},
+		spotInstancesSvc:   &SpotInstancesServiceImpl{client: client},
 	}
 }
 
 // NewWithClient creates a new AWSCompute instance with custom client (for testing)
 func NewWithClient(client EC2ClientInterface) services.Compute {
 	return &AWSCompute{
-		client: client,
-		instanceTypesSvc:    &InstanceTypesServiceImpl{client: client},
-		placementGroupsSvc:  &PlacementGroupsServiceImpl{client: client},
-		spotInstancesSvc:    &SpotInstancesServiceImpl{client: client},
+		client:             client,
+		instanceTypesSvc:   &InstanceTypesServiceImpl{client: client},
+		placementGroupsSvc: &PlacementGroupsServiceImpl{client: client},
+		spotInstancesSvc:   &SpotInstancesServiceImpl{client: client},
 	}
 }
 
@@ -284,8 +284,8 @@ type PlacementGroupsServiceImpl struct {
 // Create creates a new placement group
 func (s *PlacementGroupsServiceImpl) Create(ctx context.Context, config *services.PlacementGroupConfig) (*services.PlacementGroup, error) {
 	input := &ec2.CreatePlacementGroupInput{
-		GroupName:         aws.String(config.GroupName),
-		Strategy:          types.PlacementStrategy(config.Strategy),
+		GroupName: aws.String(config.GroupName),
+		Strategy:  types.PlacementStrategy(config.Strategy),
 	}
 
 	_, err := s.client.CreatePlacementGroup(ctx, input)

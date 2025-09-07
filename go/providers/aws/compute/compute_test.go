@@ -14,30 +14,30 @@ import (
 
 // mockEC2Client is a mock implementation of the EC2 client
 type mockEC2Client struct {
-	runInstancesResponse       *ec2.RunInstancesOutput
-	runInstancesError          error
-	describeInstancesResponse  *ec2.DescribeInstancesOutput
-	describeInstancesError     error
-	startInstancesResponse     *ec2.StartInstancesOutput
-	startInstancesError        error
-	stopInstancesResponse      *ec2.StopInstancesOutput
-	stopInstancesError         error
-	terminateInstancesResponse *ec2.TerminateInstancesOutput
-	terminateInstancesError    error
-	describeInstanceTypesResponse *ec2.DescribeInstanceTypesOutput
-	describeInstanceTypesError    error
-	describePlacementGroupsResponse *ec2.DescribePlacementGroupsOutput
-	describePlacementGroupsError    error
-	createPlacementGroupResponse *ec2.CreatePlacementGroupOutput
-	createPlacementGroupError    error
-	deletePlacementGroupResponse *ec2.DeletePlacementGroupOutput
-	deletePlacementGroupError    error
-	requestSpotInstancesResponse *ec2.RequestSpotInstancesOutput
-	requestSpotInstancesError    error
+	runInstancesResponse                 *ec2.RunInstancesOutput
+	runInstancesError                    error
+	describeInstancesResponse            *ec2.DescribeInstancesOutput
+	describeInstancesError               error
+	startInstancesResponse               *ec2.StartInstancesOutput
+	startInstancesError                  error
+	stopInstancesResponse                *ec2.StopInstancesOutput
+	stopInstancesError                   error
+	terminateInstancesResponse           *ec2.TerminateInstancesOutput
+	terminateInstancesError              error
+	describeInstanceTypesResponse        *ec2.DescribeInstanceTypesOutput
+	describeInstanceTypesError           error
+	describePlacementGroupsResponse      *ec2.DescribePlacementGroupsOutput
+	describePlacementGroupsError         error
+	createPlacementGroupResponse         *ec2.CreatePlacementGroupOutput
+	createPlacementGroupError            error
+	deletePlacementGroupResponse         *ec2.DeletePlacementGroupOutput
+	deletePlacementGroupError            error
+	requestSpotInstancesResponse         *ec2.RequestSpotInstancesOutput
+	requestSpotInstancesError            error
 	describeSpotInstanceRequestsResponse *ec2.DescribeSpotInstanceRequestsOutput
 	describeSpotInstanceRequestsError    error
-	cancelSpotInstanceRequestsResponse *ec2.CancelSpotInstanceRequestsOutput
-	cancelSpotInstanceRequestsError    error
+	cancelSpotInstanceRequestsResponse   *ec2.CancelSpotInstanceRequestsOutput
+	cancelSpotInstanceRequestsError      error
 }
 
 func (m *mockEC2Client) RunInstances(ctx context.Context, input *ec2.RunInstancesInput, opts ...func(*ec2.Options)) (*ec2.RunInstancesOutput, error) {
@@ -264,7 +264,7 @@ func TestAWSCompute_SpotInstances_Request(t *testing.T) {
 					Status: &types.SpotInstanceStatus{
 						Code: aws.String("fulfilled"),
 					},
-					SpotPrice: aws.String("0.01"),
+					SpotPrice:  aws.String("0.01"),
 					CreateTime: aws.Time(time.Now()),
 				},
 			},
@@ -297,7 +297,7 @@ func TestAWSCompute_SpotInstances_Describe(t *testing.T) {
 					Status: &types.SpotInstanceStatus{
 						Code: aws.String("fulfilled"),
 					},
-					SpotPrice: aws.String("0.01"),
+					SpotPrice:  aws.String("0.01"),
 					CreateTime: aws.Time(time.Now()),
 					InstanceId: aws.String("i-12345"),
 				},
