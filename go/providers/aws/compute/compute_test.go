@@ -23,6 +23,12 @@ type mockEC2Client struct {
 	stopInstancesError         error
 	terminateInstancesResponse *ec2.TerminateInstancesOutput
 	terminateInstancesError    error
+	createTagsResponse         *ec2.CreateTagsOutput
+	createTagsError            error
+	deleteTagsResponse         *ec2.DeleteTagsOutput
+	deleteTagsError            error
+	describeTagsResponse       *ec2.DescribeTagsOutput
+	describeTagsError          error
 }
 
 func (m *mockEC2Client) RunInstances(ctx context.Context, input *ec2.RunInstancesInput, opts ...func(*ec2.Options)) (*ec2.RunInstancesOutput, error) {
@@ -43,6 +49,18 @@ func (m *mockEC2Client) StopInstances(ctx context.Context, input *ec2.StopInstan
 
 func (m *mockEC2Client) TerminateInstances(ctx context.Context, input *ec2.TerminateInstancesInput, opts ...func(*ec2.Options)) (*ec2.TerminateInstancesOutput, error) {
 	return m.terminateInstancesResponse, m.terminateInstancesError
+}
+
+func (m *mockEC2Client) CreateTags(ctx context.Context, input *ec2.CreateTagsInput, opts ...func(*ec2.Options)) (*ec2.CreateTagsOutput, error) {
+	return m.createTagsResponse, m.createTagsError
+}
+
+func (m *mockEC2Client) DeleteTags(ctx context.Context, input *ec2.DeleteTagsInput, opts ...func(*ec2.Options)) (*ec2.DeleteTagsOutput, error) {
+	return m.deleteTagsResponse, m.deleteTagsError
+}
+
+func (m *mockEC2Client) DescribeTags(ctx context.Context, input *ec2.DescribeTagsInput, opts ...func(*ec2.Options)) (*ec2.DescribeTagsOutput, error) {
+	return m.describeTagsResponse, m.describeTagsError
 }
 
 func TestAWSCompute_CreateVM(t *testing.T) {

@@ -42,6 +42,65 @@ func main() {
 		}
 	}
 
+	// Example 1.1: Compute Tagging - Create, List, and Delete tags
+	fmt.Println("\n--- Resource Tagging ---")
+	if len(vms) > 0 {
+		vmID := vms[0].ID
+		
+		// Create tags
+		err = client.Compute().Tags().Create(ctx, &services.CreateTagsRequest{
+			ResourceIDs: []string{vmID},
+			Tags: map[string]string{
+				"Environment": "production",
+				"Project":     "cloudsdk-demo",
+				"Owner":       "cloudsdk-team",
+			},
+		})
+		if err != nil {
+			log.Printf("Error creating tags: %v", err)
+		} else {
+			fmt.Printf("Successfully created tags for VM %s\n", vmID)
+		}
+
+		// List tags
+		tags, err := client.Compute().Tags().List(ctx, &services.DescribeTagsFilter{
+			ResourceIDs: []string{vmID},
+		})
+		if err != nil {
+			log.Printf("Error listing tags: %v", err)
+		} else {
+			fmt.Printf("Found %d tags for VM %s:\n", len(tags), vmID)
+			for _, tag := range tags {
+				fmt.Printf("  - %s: %s\n", tag.Key, tag.Value)
+			}
+		}
+
+		// Delete specific tags
+		err = client.Compute().Tags().Delete(ctx, &services.DeleteTagsRequest{
+			ResourceIDs: []string{vmID},
+			TagKeys:     []string{"Owner"},
+		})
+		if err != nil {
+			log.Printf("Error deleting tags: %v", err)
+		} else {
+			fmt.Printf("Successfully deleted 'Owner' tag from VM %s\n", vmID)
+		}
+
+		// Example with ARN helper (if ARN is available)
+		// In a real scenario, you might have ARNs from other AWS services
+		exampleARN := fmt.Sprintf("arn:aws:ec2:us-east-1:123456789012:instance/%s", vmID)
+		err = client.Compute().Tags().CreateTagsByARN(ctx, []string{exampleARN}, map[string]string{
+			"ManagedBy": "cloudsdk",
+		})
+		if err != nil {
+			log.Printf("Error creating tags by ARN: %v", err)
+		} else {
+			fmt.Printf("Successfully created tags using ARN for VM %s\n", vmID)
+		}
+	} else {
+		fmt.Println("No VMs found for tagging demonstration")
+	}
+
 	// Example 2: Storage - Create Bucket
 	fmt.Println("\n--- Storage Services ---")
 	err = client.Storage().CreateBucket(ctx, &services.BucketConfig{
