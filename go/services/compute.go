@@ -30,4 +30,5 @@ type Compute interface {
 	StartVM(ctx context.Context, id string) error
 	StopVM(ctx context.Context, id string) error
 	DeleteVM(ctx context.Context, id string) error
+	Tags() Tagging
 }

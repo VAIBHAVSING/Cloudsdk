@@ -17,6 +17,9 @@ type EC2ClientInterface interface {
 	StartInstances(ctx context.Context, input *ec2.StartInstancesInput, opts ...func(*ec2.Options)) (*ec2.StartInstancesOutput, error)
 	StopInstances(ctx context.Context, input *ec2.StopInstancesInput, opts ...func(*ec2.Options)) (*ec2.StopInstancesOutput, error)
 	TerminateInstances(ctx context.Context, input *ec2.TerminateInstancesInput, opts ...func(*ec2.Options)) (*ec2.TerminateInstancesOutput, error)
+	CreateTags(ctx context.Context, input *ec2.CreateTagsInput, opts ...func(*ec2.Options)) (*ec2.CreateTagsOutput, error)
+	DeleteTags(ctx context.Context, input *ec2.DeleteTagsInput, opts ...func(*ec2.Options)) (*ec2.DeleteTagsOutput, error)
+	DescribeTags(ctx context.Context, input *ec2.DescribeTagsInput, opts ...func(*ec2.Options)) (*ec2.DescribeTagsOutput, error)
 }
 
 // AWSCompute implements the Compute interface for AWS
@@ -173,4 +176,9 @@ func (c *AWSCompute) DeleteVM(ctx context.Context, id string) error {
 	}
 
 	return nil
+}
+
+// Tags returns the tagging service for compute resources
+func (c *AWSCompute) Tags() services.Tagging {
+	return NewTagging(c.client)
 }
