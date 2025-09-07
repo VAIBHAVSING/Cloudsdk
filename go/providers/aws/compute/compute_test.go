@@ -14,10 +14,16 @@ import (
 
 // mockEC2Client is a mock implementation of the EC2 client
 type mockEC2Client struct {
-	runInstancesResponse      *ec2.RunInstancesOutput
-	runInstancesError         error
-	describeInstancesResponse *ec2.DescribeInstancesOutput
-	describeInstancesError    error
+	runInstancesResponse       *ec2.RunInstancesOutput
+	runInstancesError          error
+	describeInstancesResponse  *ec2.DescribeInstancesOutput
+	describeInstancesError     error
+	startInstancesResponse     *ec2.StartInstancesOutput
+	startInstancesError        error
+	stopInstancesResponse      *ec2.StopInstancesOutput
+	stopInstancesError         error
+	terminateInstancesResponse *ec2.TerminateInstancesOutput
+	terminateInstancesError    error
 	describeInstanceTypesResponse *ec2.DescribeInstanceTypesOutput
 	describeInstanceTypesError    error
 	describePlacementGroupsResponse *ec2.DescribePlacementGroupsOutput
@@ -68,6 +74,18 @@ func (m *mockEC2Client) DescribeSpotInstanceRequests(ctx context.Context, input 
 
 func (m *mockEC2Client) CancelSpotInstanceRequests(ctx context.Context, input *ec2.CancelSpotInstanceRequestsInput, opts ...func(*ec2.Options)) (*ec2.CancelSpotInstanceRequestsOutput, error) {
 	return m.cancelSpotInstanceRequestsResponse, m.cancelSpotInstanceRequestsError
+}
+
+func (m *mockEC2Client) StartInstances(ctx context.Context, input *ec2.StartInstancesInput, opts ...func(*ec2.Options)) (*ec2.StartInstancesOutput, error) {
+	return m.startInstancesResponse, m.startInstancesError
+}
+
+func (m *mockEC2Client) StopInstances(ctx context.Context, input *ec2.StopInstancesInput, opts ...func(*ec2.Options)) (*ec2.StopInstancesOutput, error) {
+	return m.stopInstancesResponse, m.stopInstancesError
+}
+
+func (m *mockEC2Client) TerminateInstances(ctx context.Context, input *ec2.TerminateInstancesInput, opts ...func(*ec2.Options)) (*ec2.TerminateInstancesOutput, error) {
+	return m.terminateInstancesResponse, m.terminateInstancesError
 }
 
 func TestAWSCompute_CreateVM(t *testing.T) {
@@ -140,26 +158,6 @@ func TestAWSCompute_ListVMs(t *testing.T) {
 	assert.Equal(t, "test-vm", vms[0].Name)
 }
 
-func TestAWSCompute_InstanceTypes_List(t *testing.T) {
-	mockClient := &mockEC2Client{
-		describeInstanceTypesResponse: &ec2.DescribeInstanceTypesOutput{
-			InstanceTypes: []types.InstanceTypeInfo{
-				{
-					InstanceType: types.InstanceType("t2.micro"),
-					VCpuInfo: &types.VCpuInfo{
-						DefaultVCpus: aws.Int32(1),
-					},
-					MemoryInfo: &types.MemoryInfo{
-						SizeInMiB: aws.Int64(1024),
-					},
-					NetworkInfo: &types.NetworkInfo{
-						NetworkPerformance: aws.String("Low"),
-					},
-					CurrentGeneration: aws.Bool(true),
-				},
-			},
-		},
-		describeInstanceTypesError: nil,
 	}
 
 	compute := NewWithClient(mockClient)
@@ -234,6 +232,164 @@ func TestAWSCompute_PlacementGroups_Create(t *testing.T) {
 	assert.NotNil(t, pg)
 	assert.Equal(t, "test-pg", pg.GroupName)
 	assert.Equal(t, "cluster", pg.Strategy)
+}
+
+func TestAWSCompute_SpotInstances_Request(t *testing.T) {
+	mockClient := &mockEC2Client{
+		requestSpotInstancesResponse: &ec2.RequestSpotInstancesOutput{
+			SpotInstanceRequests: []types.SpotInstanceRequest{
+				{
+					SpotInstanceRequestId: aws.String("sir-12345"),
+					State:                 types.SpotInstanceState("open"),
+					Status: &types.SpotInstanceStatus{
+						Code: aws.String("fulfilled"),
+					},
+					SpotPrice: aws.String("0.01"),
+					CreateTime: aws.Time(time.Now()),
+				},
+			},
+		},
+		requestSpotInstancesError: nil,
+	}
+
+	compute := NewWithClient(mockClient)
+
+	config := &services.SpotInstanceConfig{
+		InstanceType: "t2.micro",
+		ImageID:      "ami-12345",
+	}
+
+	request, err := compute.SpotInstances().Request(context.Background(), config)
+
+	assert.NoError(t, err)
+	assert.NotNil(t, request)
+	assert.Equal(t, "sir-12345", request.SpotInstanceRequestId)
+	assert.Equal(t, "open", request.State)
+}
+
+func TestAWSCompute_SpotInstances_Describe(t *testing.T) {
+	mockClient := &mockEC2Client{
+		describeSpotInstanceRequestsResponse: &ec2.DescribeSpotInstanceRequestsOutput{
+			SpotInstanceRequests: []types.SpotInstanceRequest{
+				{
+					SpotInstanceRequestId: aws.String("sir-12345"),
+					State:                 types.SpotInstanceState("active"),
+					Status: &types.SpotInstanceStatus{
+						Code: aws.String("fulfilled"),
+					},
+					SpotPrice: aws.String("0.01"),
+					CreateTime: aws.Time(time.Now()),
+					InstanceId: aws.String("i-12345"),
+				},
+			},
+		},
+		describeSpotInstanceRequestsError: nil,
+	}
+
+	compute := NewWithClient(mockClient)
+
+	requests, err := compute.SpotInstances().Describe(context.Background(), []string{"sir-12345"})
+
+	assert.NoError(t, err)
+	assert.Len(t, requests, 1)
+	assert.Equal(t, "sir-12345", requests[0].SpotInstanceRequestId)
+	assert.Equal(t, "i-12345", requests[0].InstanceId)
+}
+
+func TestAWSCompute_GetVM(t *testing.T) {
+	mockClient := &mockEC2Client{
+		describeInstancesResponse: &ec2.DescribeInstancesOutput{
+			Reservations: []types.Reservation{
+				{
+					Instances: []types.Instance{
+						{
+							InstanceId:       stringPtr("i-1234567890abcdef0"),
+							State:            &types.InstanceState{Name: types.InstanceStateNameRunning},
+							PublicIpAddress:  stringPtr("1.2.3.4"),
+							PrivateIpAddress: stringPtr("10.0.0.1"),
+							LaunchTime:       &time.Time{},
+							Tags: []types.Tag{
+								{Key: stringPtr("Name"), Value: stringPtr("test-vm")},
+							},
+						},
+					},
+				},
+			},
+		},
+		describeInstancesError: nil,
+	}
+
+	compute := NewWithClient(mockClient)
+
+	vm, err := compute.GetVM(context.Background(), "i-1234567890abcdef0")
+
+	assert.NoError(t, err)
+	assert.NotNil(t, vm)
+	assert.Equal(t, "i-1234567890abcdef0", vm.ID)
+	assert.Equal(t, "running", vm.State)
+	assert.Equal(t, "test-vm", vm.Name)
+}
+
+func TestAWSCompute_StartVM(t *testing.T) {
+	mockClient := &mockEC2Client{
+		startInstancesResponse: &ec2.StartInstancesOutput{},
+		startInstancesError:    nil,
+	}
+
+	compute := NewWithClient(mockClient)
+
+	err := compute.StartVM(context.Background(), "i-1234567890abcdef0")
+
+	assert.NoError(t, err)
+}
+
+func TestAWSCompute_StopVM(t *testing.T) {
+	mockClient := &mockEC2Client{
+		stopInstancesResponse: &ec2.StopInstancesOutput{},
+		stopInstancesError:    nil,
+	}
+
+	compute := NewWithClient(mockClient)
+
+	err := compute.StopVM(context.Background(), "i-1234567890abcdef0")
+
+	assert.NoError(t, err)
+}
+
+func TestAWSCompute_DeleteVM(t *testing.T) {
+	mockClient := &mockEC2Client{
+		terminateInstancesResponse: &ec2.TerminateInstancesOutput{},
+		terminateInstancesError:    nil,
+	}
+
+	compute := NewWithClient(mockClient)
+
+	err := compute.DeleteVM(context.Background(), "i-1234567890abcdef0")
+
+	assert.NoError(t, err)
+}
+
+	err := compute.StopVM(context.Background(), "i-1234567890abcdef0")
+
+	assert.NoError(t, err)
+}
+
+func TestAWSCompute_DeleteVM(t *testing.T) {
+	mockClient := &mockEC2Client{
+		terminateInstancesResponse: &ec2.TerminateInstancesOutput{},
+		terminateInstancesError:    nil,
+	}
+
+	compute := NewWithClient(mockClient)
+
+	err := compute.DeleteVM(context.Background(), "i-1234567890abcdef0")
+
+	assert.NoError(t, err)
+}
+
+	err := compute.DeleteVM(context.Background(), "i-1234567890abcdef0")
+
+	assert.NoError(t, err)
 }
 
 func TestAWSCompute_SpotInstances_Request(t *testing.T) {
