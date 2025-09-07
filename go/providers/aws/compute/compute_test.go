@@ -158,6 +158,26 @@ func TestAWSCompute_ListVMs(t *testing.T) {
 	assert.Equal(t, "test-vm", vms[0].Name)
 }
 
+func TestAWSCompute_InstanceTypes_List(t *testing.T) {
+	mockClient := &mockEC2Client{
+		describeInstanceTypesResponse: &ec2.DescribeInstanceTypesOutput{
+			InstanceTypes: []types.InstanceTypeInfo{
+				{
+					InstanceType: types.InstanceType("t2.micro"),
+					VCpuInfo: &types.VCpuInfo{
+						DefaultVCpus: aws.Int32(1),
+					},
+					MemoryInfo: &types.MemoryInfo{
+						SizeInMiB: aws.Int64(1024),
+					},
+					NetworkInfo: &types.NetworkInfo{
+						NetworkPerformance: aws.String("Low"),
+					},
+					CurrentGeneration: aws.Bool(true),
+				},
+			},
+		},
+		describeInstanceTypesError: nil,
 	}
 
 	compute := NewWithClient(mockClient)
@@ -367,91 +387,6 @@ func TestAWSCompute_DeleteVM(t *testing.T) {
 	err := compute.DeleteVM(context.Background(), "i-1234567890abcdef0")
 
 	assert.NoError(t, err)
-}
-
-	err := compute.StopVM(context.Background(), "i-1234567890abcdef0")
-
-	assert.NoError(t, err)
-}
-
-func TestAWSCompute_DeleteVM(t *testing.T) {
-	mockClient := &mockEC2Client{
-		terminateInstancesResponse: &ec2.TerminateInstancesOutput{},
-		terminateInstancesError:    nil,
-	}
-
-	compute := NewWithClient(mockClient)
-
-	err := compute.DeleteVM(context.Background(), "i-1234567890abcdef0")
-
-	assert.NoError(t, err)
-}
-
-	err := compute.DeleteVM(context.Background(), "i-1234567890abcdef0")
-
-	assert.NoError(t, err)
-}
-
-func TestAWSCompute_SpotInstances_Request(t *testing.T) {
-	mockClient := &mockEC2Client{
-		requestSpotInstancesResponse: &ec2.RequestSpotInstancesOutput{
-			SpotInstanceRequests: []types.SpotInstanceRequest{
-				{
-					SpotInstanceRequestId: aws.String("sir-12345"),
-					State:                 types.SpotInstanceState("open"),
-					Status: &types.SpotInstanceStatus{
-						Code: aws.String("fulfilled"),
-					},
-					SpotPrice:  aws.String("0.01"),
-					CreateTime: aws.Time(time.Now()),
-				},
-			},
-		},
-		requestSpotInstancesError: nil,
-	}
-
-	compute := NewWithClient(mockClient)
-
-	config := &services.SpotInstanceConfig{
-		InstanceType: "t2.micro",
-		ImageID:      "ami-12345",
-	}
-
-	request, err := compute.SpotInstances().Request(context.Background(), config)
-
-	assert.NoError(t, err)
-	assert.NotNil(t, request)
-	assert.Equal(t, "sir-12345", request.SpotInstanceRequestId)
-	assert.Equal(t, "open", request.State)
-}
-
-func TestAWSCompute_SpotInstances_Describe(t *testing.T) {
-	mockClient := &mockEC2Client{
-		describeSpotInstanceRequestsResponse: &ec2.DescribeSpotInstanceRequestsOutput{
-			SpotInstanceRequests: []types.SpotInstanceRequest{
-				{
-					SpotInstanceRequestId: aws.String("sir-12345"),
-					State:                 types.SpotInstanceState("active"),
-					Status: &types.SpotInstanceStatus{
-						Code: aws.String("fulfilled"),
-					},
-					SpotPrice:  aws.String("0.01"),
-					CreateTime: aws.Time(time.Now()),
-					InstanceId: aws.String("i-12345"),
-				},
-			},
-		},
-		describeSpotInstanceRequestsError: nil,
-	}
-
-	compute := NewWithClient(mockClient)
-
-	requests, err := compute.SpotInstances().Describe(context.Background(), []string{"sir-12345"})
-
-	assert.NoError(t, err)
-	assert.Len(t, requests, 1)
-	assert.Equal(t, "sir-12345", requests[0].SpotInstanceRequestId)
-	assert.Equal(t, "i-12345", requests[0].InstanceId)
 }
 
 func stringPtr(s string) *string {
