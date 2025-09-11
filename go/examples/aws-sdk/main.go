@@ -5,8 +5,9 @@ import (
 	"fmt"
 	"log"
 
+	"github.com/aws/aws-sdk-go-v2/aws"
 	cloudsdk "github.com/VAIBHAVSING/Cloudsdk/go"
-	"github.com/VAIBHAVSING/Cloudsdk/go/providers/aws"
+	awsprovider "github.com/VAIBHAVSING/Cloudsdk/go/providers/aws"
 	"github.com/VAIBHAVSING/Cloudsdk/go/services"
 )
 
@@ -20,7 +21,7 @@ func main() {
 	// provider, err := aws.NewAWSProvider(ctx, "us-east-1")
 
 	// Method 2: Cleaner API similar to Vercel AI SDK
-	provider, err := aws.Create(ctx, "us-east-1")
+	provider, err := awsprovider.Create(ctx, "us-east-1")
 	if err != nil {
 		log.Fatalf("Failed to create AWS provider: %v", err)
 	}
@@ -74,6 +75,50 @@ func main() {
 		fmt.Printf("Found %d database instances\n", len(dbs))
 		for _, db := range dbs {
 			fmt.Printf("- DB ID: %s, Engine: %s, Status: %s\n", db.ID, db.Engine, db.Status)
+		}
+	}
+
+	// Example 4: EC2 Instance Types
+	fmt.Println("\n--- EC2 Instance Types ---")
+	instanceTypes, err := client.Compute().InstanceTypes().List(ctx, &services.InstanceTypeFilter{
+		VCpus: aws.Int32(2),
+	})
+	if err != nil {
+		log.Printf("Error listing instance types: %v", err)
+	} else {
+		fmt.Printf("Found %d instance types with 2 vCPUs\n", len(instanceTypes))
+		for i, it := range instanceTypes {
+			if i >= 5 { // Limit output
+				fmt.Println("... and more")
+				break
+			}
+			fmt.Printf("- %s: %d vCPUs, %.1f GB RAM, %s network\n",
+				it.InstanceType, it.VCpus, it.MemoryGB, it.NetworkPerformance)
+		}
+	}
+
+	// Example 5: Placement Groups
+	fmt.Println("\n--- Placement Groups ---")
+	placementGroups, err := client.Compute().PlacementGroups().List(ctx)
+	if err != nil {
+		log.Printf("Error listing placement groups: %v", err)
+	} else {
+		fmt.Printf("Found %d placement groups\n", len(placementGroups))
+		for _, pg := range placementGroups {
+			fmt.Printf("- %s (%s): %s\n", pg.GroupName, pg.Strategy, pg.State)
+		}
+	}
+
+	// Example 6: Spot Instances (Describe existing requests)
+	fmt.Println("\n--- Spot Instance Requests ---")
+	spotRequests, err := client.Compute().SpotInstances().Describe(ctx, nil)
+	if err != nil {
+		log.Printf("Error describing spot instance requests: %v", err)
+	} else {
+		fmt.Printf("Found %d spot instance requests\n", len(spotRequests))
+		for _, req := range spotRequests {
+			fmt.Printf("- Request %s: %s, Spot Price: %s\n",
+				req.SpotInstanceRequestId, req.State, req.SpotPrice)
 		}
 	}
 
