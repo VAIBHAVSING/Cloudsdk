@@ -2,14 +2,16 @@ package compute
 
 import (
 	"context"
+	"fmt"
 	"testing"
 	"time"
 
+	cloudsdk "github.com/VAIBHAVSING/Cloudsdk/go"
 	"github.com/VAIBHAVSING/Cloudsdk/go/services"
+	cloudsdktesting "github.com/VAIBHAVSING/Cloudsdk/go/testing"
 	"github.com/aws/aws-sdk-go-v2/aws"
 	"github.com/aws/aws-sdk-go-v2/service/ec2"
 	"github.com/aws/aws-sdk-go-v2/service/ec2/types"
-	"github.com/stretchr/testify/assert"
 )
 
 // mockEC2Client is a mock implementation of the EC2 client
@@ -38,6 +40,11 @@ type mockEC2Client struct {
 	describeSpotInstanceRequestsError    error
 	cancelSpotInstanceRequestsResponse   *ec2.CancelSpotInstanceRequestsOutput
 	cancelSpotInstanceRequestsError      error
+}
+
+// CreateTags implements EC2ClientInterface.
+func (m *mockEC2Client) CreateTags(ctx context.Context, input *ec2.CreateTagsInput, opts ...func(*ec2.Options)) (*ec2.CreateTagsOutput, error) {
+	return &ec2.CreateTagsOutput{}, nil
 }
 
 func (m *mockEC2Client) RunInstances(ctx context.Context, input *ec2.RunInstancesInput, opts ...func(*ec2.Options)) (*ec2.RunInstancesOutput, error) {
@@ -89,6 +96,8 @@ func (m *mockEC2Client) TerminateInstances(ctx context.Context, input *ec2.Termi
 }
 
 func TestAWSCompute_CreateVM(t *testing.T) {
+	helper := cloudsdktesting.NewTestHelper(t)
+
 	mockClient := &mockEC2Client{
 		runInstancesResponse: &ec2.RunInstancesOutput{
 			Instances: []types.Instance{
@@ -104,27 +113,57 @@ func TestAWSCompute_CreateVM(t *testing.T) {
 		runInstancesError: nil,
 	}
 
-	// Test CreateVM through the interface
 	compute := NewWithClient(mockClient)
-
-	config := &services.VMConfig{
-		Name:         "test-vm",
-		ImageID:      "ami-12345",
-		InstanceType: "t2.micro",
-		KeyName:      "test-key",
-	}
+	config := cloudsdktesting.GenerateVMConfig("test-vm")
 
 	vm, err := compute.CreateVM(context.Background(), config)
 
-	assert.NoError(t, err)
-	assert.NotNil(t, vm)
-	assert.Equal(t, "i-1234567890abcdef0", vm.ID)
-	assert.Equal(t, "running", vm.State)
-	assert.Equal(t, "1.2.3.4", vm.PublicIP)
-	assert.Equal(t, "10.0.0.1", vm.PrivateIP)
+	helper.AssertNoError(err)
+	cloudsdktesting.AssertVMValid(t, vm)
+	helper.AssertEqual("i-1234567890abcdef0", vm.ID)
+	helper.AssertEqual("running", vm.State)
+	helper.AssertEqual("1.2.3.4", vm.PublicIP)
+	helper.AssertEqual("10.0.0.1", vm.PrivateIP)
+}
+
+func TestAWSCompute_CreateVM_ErrorScenarios(t *testing.T) {
+	helper := cloudsdktesting.NewTestHelper(t)
+
+	testCases := []struct {
+		name          string
+		mockError     error
+		expectedError cloudsdk.ErrorCode
+	}{
+		{
+			name:          "authentication error",
+			mockError:     fmt.Errorf("UnauthorizedOperation: You are not authorized to perform this operation"),
+			expectedError: cloudsdk.ErrAuthentication,
+		},
+		{
+			name:          "invalid image error",
+			mockError:     fmt.Errorf("InvalidAMIID.NotFound: The image id '[ami-12345]' does not exist"),
+			expectedError: cloudsdk.ErrResourceNotFound,
+		},
+	}
+
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			mockClient := &mockEC2Client{
+				runInstancesError: tc.mockError,
+			}
+
+			compute := NewWithClient(mockClient)
+			config := cloudsdktesting.GenerateVMConfig("test-vm")
+
+			_, err := compute.CreateVM(context.Background(), config)
+			helper.AssertError(err)
+		})
+	}
 }
 
 func TestAWSCompute_ListVMs(t *testing.T) {
+	helper := cloudsdktesting.NewTestHelper(t)
+
 	mockClient := &mockEC2Client{
 		describeInstancesResponse: &ec2.DescribeInstancesOutput{
 			Reservations: []types.Reservation{
@@ -151,14 +190,81 @@ func TestAWSCompute_ListVMs(t *testing.T) {
 
 	vms, err := compute.ListVMs(context.Background())
 
-	assert.NoError(t, err)
-	assert.Len(t, vms, 1)
-	assert.Equal(t, "i-1234567890abcdef0", vms[0].ID)
-	assert.Equal(t, "running", vms[0].State)
-	assert.Equal(t, "test-vm", vms[0].Name)
+	helper.AssertNoError(err)
+	helper.AssertEqual(1, len(vms))
+	cloudsdktesting.AssertVMValid(t, vms[0])
+	helper.AssertEqual("i-1234567890abcdef0", vms[0].ID)
+	helper.AssertEqual("running", vms[0].State)
+	helper.AssertEqual("test-vm", vms[0].Name)
 }
 
-func TestAWSCompute_InstanceTypes_List(t *testing.T) {
+func TestAWSCompute_GetVM(t *testing.T) {
+	helper := cloudsdktesting.NewTestHelper(t)
+
+	mockClient := &mockEC2Client{
+		describeInstancesResponse: &ec2.DescribeInstancesOutput{
+			Reservations: []types.Reservation{
+				{
+					Instances: []types.Instance{
+						{
+							InstanceId:       stringPtr("i-1234567890abcdef0"),
+							State:            &types.InstanceState{Name: types.InstanceStateNameRunning},
+							PublicIpAddress:  stringPtr("1.2.3.4"),
+							PrivateIpAddress: stringPtr("10.0.0.1"),
+							LaunchTime:       &time.Time{},
+							Tags: []types.Tag{
+								{Key: stringPtr("Name"), Value: stringPtr("test-vm")},
+							},
+						},
+					},
+				},
+			},
+		},
+		describeInstancesError: nil,
+	}
+
+	compute := NewWithClient(mockClient)
+
+	vm, err := compute.GetVM(context.Background(), "i-1234567890abcdef0")
+
+	helper.AssertNoError(err)
+	cloudsdktesting.AssertVMValid(t, vm)
+	helper.AssertEqual("i-1234567890abcdef0", vm.ID)
+	helper.AssertEqual("running", vm.State)
+	helper.AssertEqual("test-vm", vm.Name)
+}
+
+func TestAWSCompute_VMLifecycle(t *testing.T) {
+	helper := cloudsdktesting.NewTestHelper(t)
+
+	mockClient := &mockEC2Client{
+		startInstancesResponse:     &ec2.StartInstancesOutput{},
+		startInstancesError:        nil,
+		stopInstancesResponse:      &ec2.StopInstancesOutput{},
+		stopInstancesError:         nil,
+		terminateInstancesResponse: &ec2.TerminateInstancesOutput{},
+		terminateInstancesError:    nil,
+	}
+
+	compute := NewWithClient(mockClient)
+	vmID := "i-1234567890abcdef0"
+
+	// Test start VM
+	err := compute.StartVM(context.Background(), vmID)
+	helper.AssertNoError(err)
+
+	// Test stop VM
+	err = compute.StopVM(context.Background(), vmID)
+	helper.AssertNoError(err)
+
+	// Test delete VM
+	err = compute.DeleteVM(context.Background(), vmID)
+	helper.AssertNoError(err)
+}
+
+func TestAWSCompute_InstanceTypes(t *testing.T) {
+	helper := cloudsdktesting.NewTestHelper(t)
+
 	mockClient := &mockEC2Client{
 		describeInstanceTypesResponse: &ec2.DescribeInstanceTypesOutput{
 			InstanceTypes: []types.InstanceTypeInfo{
@@ -188,40 +294,16 @@ func TestAWSCompute_InstanceTypes_List(t *testing.T) {
 
 	instanceTypes, err := compute.InstanceTypes().List(context.Background(), filter)
 
-	assert.NoError(t, err)
-	assert.Len(t, instanceTypes, 1)
-	assert.Equal(t, "t2.micro", instanceTypes[0].InstanceType)
-	assert.Equal(t, int32(1), instanceTypes[0].VCpus)
-	assert.Equal(t, 1.0, instanceTypes[0].MemoryGB)
+	helper.AssertNoError(err)
+	helper.AssertEqual(1, len(instanceTypes))
+	helper.AssertEqual("t2.micro", instanceTypes[0].InstanceType)
+	helper.AssertEqual(int32(1), instanceTypes[0].VCpus)
+	helper.AssertEqual(1.0, instanceTypes[0].MemoryGB)
 }
 
-func TestAWSCompute_PlacementGroups_List(t *testing.T) {
-	mockClient := &mockEC2Client{
-		describePlacementGroupsResponse: &ec2.DescribePlacementGroupsOutput{
-			PlacementGroups: []types.PlacementGroup{
-				{
-					GroupName: aws.String("test-pg"),
-					GroupId:   aws.String("pg-12345"),
-					Strategy:  types.PlacementStrategy("cluster"),
-					State:     types.PlacementGroupState("available"),
-					GroupArn:  aws.String("arn:aws:ec2:us-east-1:123456789012:placement-group/test-pg"),
-				},
-			},
-		},
-		describePlacementGroupsError: nil,
-	}
+func TestAWSCompute_PlacementGroups(t *testing.T) {
+	helper := cloudsdktesting.NewTestHelper(t)
 
-	compute := NewWithClient(mockClient)
-
-	placementGroups, err := compute.PlacementGroups().List(context.Background())
-
-	assert.NoError(t, err)
-	assert.Len(t, placementGroups, 1)
-	assert.Equal(t, "test-pg", placementGroups[0].GroupName)
-	assert.Equal(t, "cluster", placementGroups[0].Strategy)
-}
-
-func TestAWSCompute_PlacementGroups_Create(t *testing.T) {
 	mockClient := &mockEC2Client{
 		createPlacementGroupResponse: &ec2.CreatePlacementGroupOutput{},
 		createPlacementGroupError:    nil,
@@ -241,20 +323,29 @@ func TestAWSCompute_PlacementGroups_Create(t *testing.T) {
 
 	compute := NewWithClient(mockClient)
 
+	// Test create placement group
 	config := &services.PlacementGroupConfig{
 		GroupName: "test-pg",
 		Strategy:  "cluster",
 	}
 
 	pg, err := compute.PlacementGroups().Create(context.Background(), config)
+	helper.AssertNoError(err)
+	helper.AssertNotEqual(nil, pg)
+	helper.AssertEqual("test-pg", pg.GroupName)
+	helper.AssertEqual("cluster", pg.Strategy)
 
-	assert.NoError(t, err)
-	assert.NotNil(t, pg)
-	assert.Equal(t, "test-pg", pg.GroupName)
-	assert.Equal(t, "cluster", pg.Strategy)
+	// Test list placement groups
+	placementGroups, err := compute.PlacementGroups().List(context.Background())
+	helper.AssertNoError(err)
+	helper.AssertEqual(1, len(placementGroups))
+	helper.AssertEqual("test-pg", placementGroups[0].GroupName)
+	helper.AssertEqual("cluster", placementGroups[0].Strategy)
 }
 
-func TestAWSCompute_SpotInstances_Request(t *testing.T) {
+func TestAWSCompute_SpotInstances(t *testing.T) {
+	helper := cloudsdktesting.NewTestHelper(t)
+
 	mockClient := &mockEC2Client{
 		requestSpotInstancesResponse: &ec2.RequestSpotInstancesOutput{
 			SpotInstanceRequests: []types.SpotInstanceRequest{
@@ -270,25 +361,6 @@ func TestAWSCompute_SpotInstances_Request(t *testing.T) {
 			},
 		},
 		requestSpotInstancesError: nil,
-	}
-
-	compute := NewWithClient(mockClient)
-
-	config := &services.SpotInstanceConfig{
-		InstanceType: "t2.micro",
-		ImageID:      "ami-12345",
-	}
-
-	request, err := compute.SpotInstances().Request(context.Background(), config)
-
-	assert.NoError(t, err)
-	assert.NotNil(t, request)
-	assert.Equal(t, "sir-12345", request.SpotInstanceRequestId)
-	assert.Equal(t, "open", request.State)
-}
-
-func TestAWSCompute_SpotInstances_Describe(t *testing.T) {
-	mockClient := &mockEC2Client{
 		describeSpotInstanceRequestsResponse: &ec2.DescribeSpotInstanceRequestsOutput{
 			SpotInstanceRequests: []types.SpotInstanceRequest{
 				{
@@ -303,90 +375,85 @@ func TestAWSCompute_SpotInstances_Describe(t *testing.T) {
 				},
 			},
 		},
-		describeSpotInstanceRequestsError: nil,
+		describeSpotInstanceRequestsError:  nil,
+		cancelSpotInstanceRequestsResponse: &ec2.CancelSpotInstanceRequestsOutput{},
+		cancelSpotInstanceRequestsError:    nil,
 	}
 
 	compute := NewWithClient(mockClient)
 
-	requests, err := compute.SpotInstances().Describe(context.Background(), []string{"sir-12345"})
+	// Test request spot instance
+	config := &services.SpotInstanceConfig{
+		InstanceType: "t2.micro",
+		ImageID:      "ami-12345",
+	}
 
-	assert.NoError(t, err)
-	assert.Len(t, requests, 1)
-	assert.Equal(t, "sir-12345", requests[0].SpotInstanceRequestId)
-	assert.Equal(t, "i-12345", requests[0].InstanceId)
+	request, err := compute.SpotInstances().Request(context.Background(), config)
+	helper.AssertNoError(err)
+	helper.AssertNotEqual(nil, request)
+	helper.AssertEqual("sir-12345", request.SpotInstanceRequestId)
+	helper.AssertEqual("open", request.State)
+
+	// Test describe spot instance requests
+	requests, err := compute.SpotInstances().Describe(context.Background(), []string{"sir-12345"})
+	helper.AssertNoError(err)
+	helper.AssertEqual(1, len(requests))
+	helper.AssertEqual("sir-12345", requests[0].SpotInstanceRequestId)
+	helper.AssertEqual("i-12345", requests[0].InstanceId)
+
+	// Test cancel spot instance request
+	err = compute.SpotInstances().Cancel(context.Background(), "sir-12345")
+	helper.AssertNoError(err)
 }
 
-func TestAWSCompute_GetVM(t *testing.T) {
+func TestAWSCompute_ConcurrentOperations(t *testing.T) {
 	mockClient := &mockEC2Client{
 		describeInstancesResponse: &ec2.DescribeInstancesOutput{
-			Reservations: []types.Reservation{
-				{
-					Instances: []types.Instance{
-						{
-							InstanceId:       stringPtr("i-1234567890abcdef0"),
-							State:            &types.InstanceState{Name: types.InstanceStateNameRunning},
-							PublicIpAddress:  stringPtr("1.2.3.4"),
-							PrivateIpAddress: stringPtr("10.0.0.1"),
-							LaunchTime:       &time.Time{},
-							Tags: []types.Tag{
-								{Key: stringPtr("Name"), Value: stringPtr("test-vm")},
-							},
-						},
-					},
-				},
-			},
+			Reservations: []types.Reservation{},
 		},
 		describeInstancesError: nil,
 	}
 
 	compute := NewWithClient(mockClient)
 
-	vm, err := compute.GetVM(context.Background(), "i-1234567890abcdef0")
-
-	assert.NoError(t, err)
-	assert.NotNil(t, vm)
-	assert.Equal(t, "i-1234567890abcdef0", vm.ID)
-	assert.Equal(t, "running", vm.State)
-	assert.Equal(t, "test-vm", vm.Name)
+	// Test concurrent ListVMs calls
+	cloudsdktesting.TestConcurrency(t, 10, func(id int) error {
+		_, err := compute.ListVMs(context.Background())
+		return err
+	})
 }
 
-func TestAWSCompute_StartVM(t *testing.T) {
+func BenchmarkAWSCompute_ListVMs(b *testing.B) {
 	mockClient := &mockEC2Client{
-		startInstancesResponse: &ec2.StartInstancesOutput{},
-		startInstancesError:    nil,
+		describeInstancesResponse: &ec2.DescribeInstancesOutput{
+			Reservations: []types.Reservation{},
+		},
+		describeInstancesError: nil,
 	}
 
 	compute := NewWithClient(mockClient)
 
-	err := compute.StartVM(context.Background(), "i-1234567890abcdef0")
-
-	assert.NoError(t, err)
+	cloudsdktesting.BenchmarkOperation(b, func() error {
+		_, err := compute.ListVMs(context.Background())
+		return err
+	})
 }
 
-func TestAWSCompute_StopVM(t *testing.T) {
+func TestAWSCompute_PerformanceLatency(t *testing.T) {
 	mockClient := &mockEC2Client{
-		stopInstancesResponse: &ec2.StopInstancesOutput{},
-		stopInstancesError:    nil,
+		describeInstancesResponse: &ec2.DescribeInstancesOutput{
+			Reservations: []types.Reservation{},
+		},
+		describeInstancesError: nil,
 	}
 
 	compute := NewWithClient(mockClient)
 
-	err := compute.StopVM(context.Background(), "i-1234567890abcdef0")
-
-	assert.NoError(t, err)
-}
-
-func TestAWSCompute_DeleteVM(t *testing.T) {
-	mockClient := &mockEC2Client{
-		terminateInstancesResponse: &ec2.TerminateInstancesOutput{},
-		terminateInstancesError:    nil,
-	}
-
-	compute := NewWithClient(mockClient)
-
-	err := compute.DeleteVM(context.Background(), "i-1234567890abcdef0")
-
-	assert.NoError(t, err)
+	// Assert that ListVMs completes within reasonable time
+	cloudsdktesting.AssertLatencyUnder(t, 100*time.Millisecond, func() error {
+		_, err := compute.ListVMs(context.Background())
+		return err
+	})
 }
 
 func stringPtr(s string) *string {
