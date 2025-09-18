@@ -464,50 +464,7 @@ func logResponse(operation string, output interface{}, err error, debug bool) {
 	}
 }
 
-// pollDBInstanceStatus polls for database instance status changes
-func (d *AWSDatabase) pollDBInstanceStatus(ctx context.Context, instanceID string, targetStatus string, timeout time.Duration) error {
-	deadline := time.Now().Add(timeout)
 
-	for time.Now().Before(deadline) {
-		select {
-		case <-ctx.Done():
-			return ctx.Err()
-		default:
-		}
-
-		instance, err := d.GetDB(ctx, instanceID)
-		if err != nil {
-			return err
-		}
-
-		if instance.Status == targetStatus {
-			return nil
-		}
-
-		if instance.Status == "failed" || instance.Status == "incompatible-parameters" {
-			return cloudsdk.NewCloudError(cloudsdk.ErrProviderError,
-				fmt.Sprintf("Database instance entered failed state: %s", instance.Status),
-				"aws", "database", "pollStatus").
-				WithSuggestions(
-					"Check the database instance logs for more details",
-					"Verify your configuration parameters are valid",
-					"Contact AWS Support if the issue persists",
-				)
-		}
-
-		// Wait before next poll
-		time.Sleep(30 * time.Second)
-	}
-
-	return cloudsdk.NewCloudError(cloudsdk.ErrNetworkTimeout,
-		fmt.Sprintf("Timeout waiting for database instance to reach status '%s'", targetStatus),
-		"aws", "database", "pollStatus").
-		WithSuggestions(
-			"Increase the timeout duration",
-			"Check AWS RDS service status",
-			"Verify the operation is progressing normally",
-		)
-}
 
 // RDSClientInterface defines methods we need from RDS client for testing
 type RDSClientInterface interface {
