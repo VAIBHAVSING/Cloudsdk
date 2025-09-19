@@ -75,7 +75,7 @@ func (e *CloudError) Error() string {
 		msg += fmt.Sprintf(" (provider: %s)", e.Provider)
 	}
 	if len(e.Suggestions) > 0 {
-		msg += fmt.Sprintf("\nSuggestions:\n")
+		msg += "\nSuggestions:\n"
 		for _, suggestion := range e.Suggestions {
 			msg += fmt.Sprintf("  - %s\n", suggestion)
 		}

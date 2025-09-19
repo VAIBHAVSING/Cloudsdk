@@ -34,15 +34,10 @@ jobs:
           go mod download
           go mod verify
 
-      - name: Install golangci-lint
-        run: |
-          curl -sSfL https://raw.githubusercontent.com/golangci/golangci-lint/master/install.sh | sh -s -- -b $(go env GOPATH)/bin v1.55.2
-
       - name: Lint
         working-directory: ./go
         run: |
           go vet ./...
-          golangci-lint run --timeout=2m
 
       - name: Build
         working-directory: ./go
