@@ -61,7 +61,7 @@ func main() {
 	bucketName := "cloudsdk-example-bucket-" + fmt.Sprintf("%d", 12345)
 	fmt.Printf("\nTrying to create bucket: %s\n", bucketName)
 	err = client.Storage().CreateBucket(ctx, &services.BucketConfig{
-		Name:   bucketName,
+		Name: bucketName,
 	})
 	if err != nil {
 		fmt.Printf("Error creating bucket: %v\n", err)
