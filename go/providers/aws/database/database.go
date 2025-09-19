@@ -464,8 +464,6 @@ func logResponse(operation string, output interface{}, err error, debug bool) {
 	}
 }
 
-
-
 // RDSClientInterface defines methods we need from RDS client for testing
 type RDSClientInterface interface {
 	CreateDBInstance(ctx context.Context, input *rds.CreateDBInstanceInput, opts ...func(*rds.Options)) (*rds.CreateDBInstanceOutput, error)
